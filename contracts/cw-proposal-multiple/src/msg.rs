@@ -3,10 +3,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use voting::{deposit::DepositInfo, voting::MultipleChoiceVote};
 
-use crate::{
-    state::{MultipleChoiceOption, MultipleChoiceOptions},
-    voting_strategy::VotingStrategy,
-};
+use crate::{state::MultipleChoiceOptions, voting_strategy::VotingStrategy};
 use cw_core_macros::govmod_query;
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
@@ -105,7 +102,7 @@ pub enum ExecuteMsg {
 }
 
 #[govmod_query]
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     /// Gets the governance module's config. Returns `state::Config`.
@@ -137,7 +134,7 @@ pub enum QueryMsg {
     VoteHooks {},
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct VoteMsg {
     pub proposal_id: u64,
     pub vote: MultipleChoiceVote,

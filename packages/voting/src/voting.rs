@@ -30,7 +30,7 @@ pub enum Vote {
     Abstain,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, JsonSchema, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, JsonSchema, Debug)]
 pub struct MultipleChoiceVote {
     // A vote indicates which option the user has selected.
     pub option_id: u32,
@@ -42,7 +42,7 @@ impl std::fmt::Display for MultipleChoiceVote {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema, Debug)]
 pub struct MultipleChoiceVotes {
     // Vote counts is a vector of integers indicating the vote weight for each option
     // (the index corresponds to the option).

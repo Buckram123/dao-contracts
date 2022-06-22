@@ -1,20 +1,9 @@
-use std::u128;
-
-use cosmwasm_std::{to_binary, Addr, Binary, CosmosMsg, Decimal, Empty, Uint128, WasmMsg};
+use cosmwasm_std::{to_binary, Addr, Binary, Empty, Uint128};
 use cw20::Cw20Coin;
 use cw20_staked_balance_voting::msg::ActiveThreshold;
 use cw_core::msg::ModuleInstantiateInfo;
-use cw_multi_test::{next_block, App, Contract, ContractWrapper, Executor};
+use cw_multi_test::{App, Contract, ContractWrapper, Executor};
 use cw_utils::Duration;
-
-use crate::TestSingleChoiceVote;
-use voting::{
-    deposit::{CheckedDepositInfo, DepositInfo, DepositToken},
-    proposal::Proposal,
-    status::Status,
-    threshold::{PercentageThreshold, Threshold},
-    voting::{Vote, Votes},
-};
 
 const CREATOR_ADDR: &str = "creator";
 

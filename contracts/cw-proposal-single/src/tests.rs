@@ -13,7 +13,6 @@ use indexable_hooks::HooksResponse;
 use testing::{ShouldExecute, TestSingleChoiceVote};
 use voting::{
     deposit::{CheckedDepositInfo, DepositInfo, DepositToken},
-    proposal::Proposal,
     status::Status,
     threshold::{PercentageThreshold, Threshold},
     voting::{Vote, Votes},

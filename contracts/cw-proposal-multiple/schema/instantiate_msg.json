@@ -3,10 +3,8 @@
   "title": "InstantiateMsg",
   "type": "object",
   "required": [
-    "gov_token_address",
     "max_voting_period",
     "only_members_execute",
-    "parent_dao_contract_address",
     "voting_strategy"
   ],
   "properties": {
@@ -21,10 +19,6 @@
         }
       ]
     },
-    "gov_token_address": {
-      "description": "The existing governance token address",
-      "type": "string"
-    },
     "max_voting_period": {
       "description": "The amount of time a proposal can be voted on before expiring",
       "allOf": [
@@ -33,13 +27,20 @@
         }
       ]
     },
+    "min_voting_period": {
+      "description": "The minimum amount of time a proposal must be open before passing. A proposal may fail before this amount of time has elapsed, but it will not pass. This can be useful for preventing governance attacks wherein an attacker aquires a large number of tokens and forces a proposal through.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Duration"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "only_members_execute": {
       "description": "If set to true only members may execute passed proposals. Otherwise, any address may execute a passed proposal.",
       "type": "boolean"
-    },
-    "parent_dao_contract_address": {
-      "description": "The parent dao contract address",
-      "type": "string"
     },
     "voting_strategy": {
       "description": "Voting params configuration",
@@ -204,26 +205,6 @@
           ],
           "properties": {
             "single_choice": {
-              "type": "object",
-              "required": [
-                "quorum"
-              ],
-              "properties": {
-                "quorum": {
-                  "$ref": "#/definitions/PercentageThreshold"
-                }
-              }
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "ranked_choice"
-          ],
-          "properties": {
-            "ranked_choice": {
               "type": "object",
               "required": [
                 "quorum"

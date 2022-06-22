@@ -11,7 +11,7 @@ use voting::{deposit::CheckedDepositInfo, threshold::Threshold, voting::Vote};
 use crate::proposal::SingleChoiceProposal;
 
 /// A vote cast for a proposal.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct Ballot {
     /// The amount of voting power behind the vote.
     pub power: Uint128,

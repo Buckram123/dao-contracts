@@ -248,16 +248,13 @@ impl MultipleChoiceProposal {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use crate::{
-        state::{MultipleChoiceOption, MultipleChoiceOptions},
-        voting_strategy,
-    };
+    use crate::state::{MultipleChoiceOption, MultipleChoiceOptions};
 
     use super::*;
-    use ::voting::threshold::PercentageThreshold;
-    use cosmwasm_std::{testing::mock_env, Decimal};
-    use cw_core_interface::voting;
+
+    use cosmwasm_std::testing::mock_env;
 
     fn create_proposal(
         block: &BlockInfo,
@@ -278,12 +275,11 @@ mod tests {
             },
         ];
 
-        let expiration: Expiration;
-        if is_expired {
-            expiration = Expiration::AtHeight(block.height - 5)
+        let expiration: Expiration = if is_expired {
+            Expiration::AtHeight(block.height - 5)
         } else {
-            expiration = Expiration::AtHeight(block.height + 5)
-        }
+            Expiration::AtHeight(block.height + 5)
+        };
 
         let mc_options = MultipleChoiceOptions { options };
         MultipleChoiceProposal {
@@ -307,7 +303,7 @@ mod tests {
     fn test_majority_quorum() {
         let env = mock_env();
         let voting_strategy = VotingStrategy::SingleChoice {
-            quorum: PercentageThreshold::Majority {},
+            quorum: voting::threshold::PercentageThreshold::Majority {},
         };
 
         let votes = MultipleChoiceVotes {
@@ -317,7 +313,7 @@ mod tests {
         let prop = create_proposal(
             &env.block,
             voting_strategy.clone(),
-            votes.clone(),
+            votes,
             Uint128::new(1),
             false,
         );
@@ -400,7 +396,9 @@ mod tests {
     fn test_percentage_quorum() {
         let env = mock_env();
         let voting_strategy = VotingStrategy::SingleChoice {
-            quorum: PercentageThreshold::Percent(Decimal::percent(10)),
+            quorum: voting::threshold::PercentageThreshold::Percent(
+                cosmwasm_std::Decimal::percent(10),
+            ),
         };
 
         let votes = MultipleChoiceVotes {
@@ -410,7 +408,7 @@ mod tests {
         let prop = create_proposal(
             &env.block,
             voting_strategy.clone(),
-            votes.clone(),
+            votes,
             Uint128::new(1),
             false,
         );
@@ -482,13 +480,7 @@ mod tests {
         let votes = MultipleChoiceVotes {
             vote_weights: vec![Uint128::new(50), Uint128::new(50), Uint128::new(0)],
         };
-        let prop = create_proposal(
-            &env.block,
-            voting_strategy.clone(),
-            votes,
-            Uint128::new(150),
-            false,
-        );
+        let prop = create_proposal(&env.block, voting_strategy, votes, Uint128::new(150), false);
 
         // Quorum was met but it is a tie but not expired and still voting power remains, should be open.
         assert!(!prop.is_passed(&env.block).unwrap());
@@ -499,7 +491,9 @@ mod tests {
     fn test_unbeatable_none_option() {
         let env = mock_env();
         let voting_strategy = VotingStrategy::SingleChoice {
-            quorum: PercentageThreshold::Percent(Decimal::percent(10)),
+            quorum: voting::threshold::PercentageThreshold::Percent(
+                cosmwasm_std::Decimal::percent(10),
+            ),
         };
         let votes = MultipleChoiceVotes {
             vote_weights: vec![Uint128::new(0), Uint128::new(50), Uint128::new(500)],
@@ -521,7 +515,9 @@ mod tests {
     fn test_quorum_rounding() {
         let env = mock_env();
         let voting_strategy = VotingStrategy::SingleChoice {
-            quorum: PercentageThreshold::Percent(Decimal::percent(10)),
+            quorum: voting::threshold::PercentageThreshold::Percent(
+                cosmwasm_std::Decimal::percent(10),
+            ),
         };
         let votes = MultipleChoiceVotes {
             vote_weights: vec![Uint128::new(10), Uint128::new(0), Uint128::new(0)],
@@ -534,7 +530,9 @@ mod tests {
 
         // High Precision rounding
         let voting_strategy = VotingStrategy::SingleChoice {
-            quorum: PercentageThreshold::Percent(Decimal::percent(100)),
+            quorum: voting::threshold::PercentageThreshold::Percent(
+                cosmwasm_std::Decimal::percent(100),
+            ),
         };
 
         let votes = MultipleChoiceVotes {
@@ -554,7 +552,9 @@ mod tests {
 
         // High Precision rounding
         let voting_strategy = VotingStrategy::SingleChoice {
-            quorum: PercentageThreshold::Percent(Decimal::percent(99)),
+            quorum: voting::threshold::PercentageThreshold::Percent(
+                cosmwasm_std::Decimal::percent(99),
+            ),
         };
 
         let votes = MultipleChoiceVotes {
@@ -577,7 +577,9 @@ mod tests {
     fn test_tricky_pass() {
         let env = mock_env();
         let voting_strategy = VotingStrategy::SingleChoice {
-            quorum: PercentageThreshold::Percent(Decimal::from_ratio(7u32, 13u32)),
+            quorum: voting::threshold::PercentageThreshold::Percent(
+                cosmwasm_std::Decimal::from_ratio(7u32, 13u32),
+            ),
         };
         let votes = MultipleChoiceVotes {
             vote_weights: vec![Uint128::new(7), Uint128::new(0), Uint128::new(6)],
@@ -605,7 +607,7 @@ mod tests {
     fn test_tricky_pass_majority() {
         let env = mock_env();
         let voting_strategy = VotingStrategy::SingleChoice {
-            quorum: PercentageThreshold::Majority {},
+            quorum: voting::threshold::PercentageThreshold::Majority {},
         };
 
         let votes = MultipleChoiceVotes {
@@ -623,13 +625,7 @@ mod tests {
         assert!(prop.is_passed(&env.block).unwrap());
         assert!(!prop.is_rejected(&env.block).unwrap());
 
-        let prop = create_proposal(
-            &env.block,
-            voting_strategy.clone(),
-            votes.clone(),
-            Uint128::new(14),
-            true,
-        );
+        let prop = create_proposal(&env.block, voting_strategy, votes, Uint128::new(14), true);
 
         // Shouldn't pass if only half voted
         assert!(!prop.is_passed(&env.block).unwrap());

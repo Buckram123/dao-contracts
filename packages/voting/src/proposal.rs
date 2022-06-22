@@ -1,8 +1,5 @@
 use cosmwasm_std::Addr;
 
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-
 use crate::{deposit::CheckedDepositInfo, status::Status};
 
 /// Default limit for proposal pagination.

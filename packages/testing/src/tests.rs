@@ -2,7 +2,7 @@ use cosmwasm_std::{Decimal, Uint128};
 use rand::{prelude::SliceRandom, Rng};
 use voting::status::Status;
 use voting::threshold::{PercentageThreshold, Threshold};
-use voting::voting::{MultipleChoiceVote, Vote};
+use voting::voting::Vote;
 
 /// If a test vote should execute. Used for fuzzing and checking that
 /// votes after a proposal has completed aren't allowed.

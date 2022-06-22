@@ -37,7 +37,7 @@ pub struct Config {
 }
 
 /// Information about a vote that was cast.
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema, Debug)]
 pub struct VoteInfo {
     /// The address that voted.
     pub voter: Addr,
@@ -47,7 +47,7 @@ pub struct VoteInfo {
     pub power: Uint128,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub enum MultipleChoiceOptionType {
     /// Choice that represents selecting none of the options; still counts toward quorum
     /// and allows proposals with all bad options to be voted against.
@@ -122,7 +122,7 @@ impl MultipleChoiceOptions {
 
 // we cast a ballot with our chosen vote and a given weight
 // stored under the key that voted
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema, Debug)]
 pub struct Ballot {
     /// The amount of voting power behind the vote.
     pub power: Uint128,

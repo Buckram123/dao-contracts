@@ -1,5 +1,3 @@
-use std::ops::Mul;
-
 use cosmwasm_std::{to_binary, Addr, Binary, CosmosMsg, Decimal, Empty, Uint128, WasmMsg};
 use cw20::Cw20Coin;
 use cw20_staked_balance_voting::msg::ActiveThreshold;
@@ -17,7 +15,7 @@ use voting::{
 use crate::{
     msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg},
     proposal::MultipleChoiceProposal,
-    query::{ProposalListResponse, ProposalResponse, VoteResponse},
+    query::{ProposalListResponse, ProposalResponse, VoteListResponse, VoteResponse},
     state::{Config, MultipleChoiceOption, MultipleChoiceOptions, VoteInfo, MAX_NUM_CHOICES},
     voting_strategy::VotingStrategy,
     ContractError,
@@ -217,7 +215,7 @@ where
         &ExecuteMsg::Propose {
             title: "A simple text proposal".to_string(),
             description: "A simple text proposal".to_string(),
-            choices: mc_options.clone(),
+            choices: mc_options,
         },
         &[],
     )
@@ -243,8 +241,7 @@ where
         );
         match should_execute {
             ShouldExecute::Yes => {
-                // assert!(res.is_ok());
-                if !res.is_ok() {
+                if res.is_err() {
                     println!("{:?}", res.err());
                     panic!()
                 }
@@ -356,27 +353,6 @@ where
         None,
         false,
     )
-}
-
-pub fn test_votes_quorum_not_met<F>(do_test_votes: F)
-where
-    F: Fn(Vec<TestMultipleChoiceVote>, VotingStrategy, Status, Option<Uint128>, bool),
-{
-    // Vote for one option, but pass in total supply so that quorum will not be met
-    do_test_votes(
-        vec![TestMultipleChoiceVote {
-            voter: "bluenote".to_string(),
-            position: MultipleChoiceVote { option_id: 0 },
-            weight: Uint128::new(10),
-            should_execute: ShouldExecute::Yes,
-        }],
-        VotingStrategy::SingleChoice {
-            quorum: PercentageThreshold::Percent(Decimal::percent(1)),
-        },
-        Status::Passed,
-        Some(Uint128::new(30)),
-        false,
-    );
 }
 
 pub fn test_vote_invalid_option<F>(do_test_votes: F)
@@ -719,20 +695,15 @@ where
         let one_sum: u64 = one.iter().sum();
         let none_sum: u64 = none.iter().sum();
 
-        let expected_status: Status;
         let mut sums = vec![zero_sum, one_sum, none_sum];
         sums.sort();
 
-        // If none of the above wins.
-        if *sums.last().unwrap() == none_sum {
-            expected_status = Status::Rejected;
-        }
-        // If there is a tie between first and second place.
-        else if sums[1] == sums[2] {
-            expected_status = Status::Rejected;
+        // If none of the above wins or there is a tie between second and first choice.
+        let expected_status: Status = if *sums.last().unwrap() == none_sum || sums[1] == sums[2] {
+            Status::Rejected
         } else {
-            expected_status = Status::Passed;
-        }
+            Status::Passed
+        };
 
         let zero = zero
             .into_iter()
@@ -815,12 +786,12 @@ fn test_propose() {
         .unwrap();
 
     assert_eq!(governance_modules.len(), 1);
-    let govmod_single = governance_modules.into_iter().next().unwrap();
+    let govmod = governance_modules.into_iter().next().unwrap();
 
     // Check that the config has been configured correctly.
     let config: Config = app
         .wrap()
-        .query_wasm_smart(govmod_single.clone(), &QueryMsg::Config {})
+        .query_wasm_smart(govmod.clone(), &QueryMsg::Config {})
         .unwrap();
 
     let expected = Config {
@@ -849,7 +820,7 @@ fn test_propose() {
     // Create a new proposal.
     app.execute_contract(
         Addr::unchecked(CREATOR_ADDR),
-        govmod_single.clone(),
+        govmod.clone(),
         &ExecuteMsg::Propose {
             title: "A simple text proposal".to_string(),
             description: "A simple text proposal".to_string(),
@@ -861,7 +832,7 @@ fn test_propose() {
 
     let created: ProposalResponse = app
         .wrap()
-        .query_wasm_smart(govmod_single, &QueryMsg::Proposal { proposal_id: 1 })
+        .query_wasm_smart(govmod, &QueryMsg::Proposal { proposal_id: 1 })
         .unwrap();
 
     let current_block = app.block_info();
@@ -924,12 +895,12 @@ fn test_propose_wrong_num_choices() {
         .unwrap();
 
     assert_eq!(governance_modules.len(), 1);
-    let govmod_single = governance_modules.into_iter().next().unwrap();
+    let govmod = governance_modules.into_iter().next().unwrap();
 
     // Check that the config has been configured correctly.
     let config: Config = app
         .wrap()
-        .query_wasm_smart(govmod_single.clone(), &QueryMsg::Config {})
+        .query_wasm_smart(govmod.clone(), &QueryMsg::Config {})
         .unwrap();
 
     let expected = Config {
@@ -938,7 +909,7 @@ fn test_propose_wrong_num_choices() {
         only_members_execute: false,
         dao: governance_addr,
         deposit_info: None,
-        voting_strategy: voting_strategy.clone(),
+        voting_strategy,
     };
 
     assert_eq!(config, expected);
@@ -950,11 +921,11 @@ fn test_propose_wrong_num_choices() {
     let err = app
         .execute_contract(
             Addr::unchecked(CREATOR_ADDR),
-            govmod_single.clone(),
+            govmod.clone(),
             &ExecuteMsg::Propose {
                 title: "A simple text proposal".to_string(),
                 description: "A simple text proposal".to_string(),
-                choices: mc_options.clone(),
+                choices: mc_options,
             },
             &[],
         )
@@ -980,11 +951,11 @@ fn test_propose_wrong_num_choices() {
     let err = app
         .execute_contract(
             Addr::unchecked(CREATOR_ADDR),
-            govmod_single.clone(),
+            govmod,
             &ExecuteMsg::Propose {
                 title: "A simple text proposal".to_string(),
                 description: "A simple text proposal".to_string(),
-                choices: mc_options.clone(),
+                choices: mc_options,
             },
             &[],
         )
@@ -1106,17 +1077,17 @@ fn test_migrate() {
         .unwrap();
 
     assert_eq!(governance_modules.len(), 1);
-    let govmod_single = governance_modules.into_iter().next().unwrap();
+    let govmod = governance_modules.into_iter().next().unwrap();
 
     let config: Config = app
         .wrap()
-        .query_wasm_smart(govmod_single.clone(), &QueryMsg::Config {})
+        .query_wasm_smart(govmod.clone(), &QueryMsg::Config {})
         .unwrap();
 
     app.execute(
         governance_addr,
         CosmosMsg::Wasm(WasmMsg::Migrate {
-            contract_addr: govmod_single.to_string(),
+            contract_addr: govmod.to_string(),
             new_code_id: govmod_id,
             msg: to_binary(&MigrateMsg {}).unwrap(),
         }),
@@ -1125,7 +1096,7 @@ fn test_migrate() {
 
     let new_config: Config = app
         .wrap()
-        .query_wasm_smart(govmod_single, &QueryMsg::Config {})
+        .query_wasm_smart(govmod, &QueryMsg::Config {})
         .unwrap();
 
     assert_eq!(config, new_config);
@@ -1158,11 +1129,11 @@ fn test_proposal_count_initialized_to_zero() {
     let proposal_modules = gov_state.proposal_modules;
 
     assert_eq!(proposal_modules.len(), 1);
-    let proposal_single = proposal_modules.into_iter().next().unwrap();
+    let govmod = proposal_modules.into_iter().next().unwrap();
 
     let proposal_count: u64 = app
         .wrap()
-        .query_wasm_smart(proposal_single, &QueryMsg::ProposalCount {})
+        .query_wasm_smart(govmod, &QueryMsg::ProposalCount {})
         .unwrap();
 
     assert_eq!(proposal_count, 0);
@@ -1205,7 +1176,7 @@ fn test_no_early_pass_with_min_duration() {
     let proposal_modules = gov_state.proposal_modules;
 
     assert_eq!(proposal_modules.len(), 1);
-    let proposal_single = proposal_modules.into_iter().next().unwrap();
+    let govmod = proposal_modules.into_iter().next().unwrap();
 
     let options = vec![
         MultipleChoiceOption {
@@ -1222,7 +1193,7 @@ fn test_no_early_pass_with_min_duration() {
 
     app.execute_contract(
         Addr::unchecked("whale"),
-        proposal_single.clone(),
+        govmod.clone(),
         &ExecuteMsg::Propose {
             title: "A simple text proposal".to_string(),
             description: "This is a simple text proposal".to_string(),
@@ -1236,7 +1207,7 @@ fn test_no_early_pass_with_min_duration() {
     // proposal to pass. Because there is a min duration it does not.
     app.execute_contract(
         Addr::unchecked("whale"),
-        proposal_single.clone(),
+        govmod.clone(),
         &ExecuteMsg::Vote {
             proposal_id: 1,
             vote: MultipleChoiceVote { option_id: 0 },
@@ -1247,10 +1218,7 @@ fn test_no_early_pass_with_min_duration() {
 
     let proposal: ProposalResponse = app
         .wrap()
-        .query_wasm_smart(
-            proposal_single.clone(),
-            &QueryMsg::Proposal { proposal_id: 1 },
-        )
+        .query_wasm_smart(govmod.clone(), &QueryMsg::Proposal { proposal_id: 1 })
         .unwrap();
 
     assert_eq!(proposal.proposal.status, Status::Open);
@@ -1260,7 +1228,7 @@ fn test_no_early_pass_with_min_duration() {
 
     let proposal: ProposalResponse = app
         .wrap()
-        .query_wasm_smart(proposal_single, &QueryMsg::Proposal { proposal_id: 1 })
+        .query_wasm_smart(govmod, &QueryMsg::Proposal { proposal_id: 1 })
         .unwrap();
 
     assert_eq!(proposal.proposal.status, Status::Passed);
@@ -1367,7 +1335,7 @@ fn test_min_duration_same_as_proposal_duration() {
     let proposal_modules = gov_state.proposal_modules;
 
     assert_eq!(proposal_modules.len(), 1);
-    let proposal_single = proposal_modules.into_iter().next().unwrap();
+    let govmod = proposal_modules.into_iter().next().unwrap();
 
     let options = vec![
         MultipleChoiceOption {
@@ -1384,7 +1352,7 @@ fn test_min_duration_same_as_proposal_duration() {
 
     app.execute_contract(
         Addr::unchecked("whale"),
-        proposal_single.clone(),
+        govmod.clone(),
         &ExecuteMsg::Propose {
             title: "A simple text proposal".to_string(),
             description: "This is a simple text proposal".to_string(),
@@ -1398,7 +1366,7 @@ fn test_min_duration_same_as_proposal_duration() {
     // proposal to pass. Because there is a min duration it does not.
     app.execute_contract(
         Addr::unchecked("whale"),
-        proposal_single.clone(),
+        govmod.clone(),
         &ExecuteMsg::Vote {
             proposal_id: 1,
             vote: MultipleChoiceVote { option_id: 0 },
@@ -1409,10 +1377,7 @@ fn test_min_duration_same_as_proposal_duration() {
 
     let proposal: ProposalResponse = app
         .wrap()
-        .query_wasm_smart(
-            proposal_single.clone(),
-            &QueryMsg::Proposal { proposal_id: 1 },
-        )
+        .query_wasm_smart(govmod.clone(), &QueryMsg::Proposal { proposal_id: 1 })
         .unwrap();
 
     assert_eq!(proposal.proposal.status, Status::Open);
@@ -1420,7 +1385,7 @@ fn test_min_duration_same_as_proposal_duration() {
     // someone else can vote none of the above.
     app.execute_contract(
         Addr::unchecked("blue"),
-        proposal_single.clone(),
+        govmod.clone(),
         &ExecuteMsg::Vote {
             proposal_id: 1,
             vote: MultipleChoiceVote { option_id: 2 },
@@ -1434,7 +1399,7 @@ fn test_min_duration_same_as_proposal_duration() {
 
     let proposal: ProposalResponse = app
         .wrap()
-        .query_wasm_smart(proposal_single, &QueryMsg::Proposal { proposal_id: 1 })
+        .query_wasm_smart(govmod, &QueryMsg::Proposal { proposal_id: 1 })
         .unwrap();
 
     assert_eq!(proposal.proposal.status, Status::Passed);
@@ -1479,11 +1444,11 @@ fn test_voting_module_token_proposal_deposit_instantiate() {
     let voting_module = gov_state.voting_module;
 
     assert_eq!(governance_modules.len(), 1);
-    let govmod_single = governance_modules.into_iter().next().unwrap();
+    let govmod = governance_modules.into_iter().next().unwrap();
 
     let config: Config = app
         .wrap()
-        .query_wasm_smart(govmod_single, &QueryMsg::Config {})
+        .query_wasm_smart(govmod, &QueryMsg::Config {})
         .unwrap();
     let expected_token: Addr = app
         .wrap()
@@ -1654,11 +1619,11 @@ fn test_take_proposal_deposit() {
     let governance_modules = gov_state.proposal_modules;
 
     assert_eq!(governance_modules.len(), 1);
-    let govmod_single = governance_modules.into_iter().next().unwrap();
+    let govmod = governance_modules.into_iter().next().unwrap();
 
     let govmod_config: Config = app
         .wrap()
-        .query_wasm_smart(govmod_single.clone(), &QueryMsg::Config {})
+        .query_wasm_smart(govmod.clone(), &QueryMsg::Config {})
         .unwrap();
     let CheckedDepositInfo {
         token,
@@ -1685,7 +1650,7 @@ fn test_take_proposal_deposit() {
     // the proposal deposit.
     app.execute_contract(
         Addr::unchecked("blue"),
-        govmod_single.clone(),
+        govmod.clone(),
         &ExecuteMsg::Propose {
             title: "A simple text proposal".to_string(),
             description: "This is a simple text proposal".to_string(),
@@ -1700,7 +1665,7 @@ fn test_take_proposal_deposit() {
         Addr::unchecked("blue"),
         token.clone(),
         &cw20_base::msg::ExecuteMsg::IncreaseAllowance {
-            spender: govmod_single.to_string(),
+            spender: govmod.to_string(),
             amount: Uint128::new(1),
             expires: None,
         },
@@ -1711,7 +1676,7 @@ fn test_take_proposal_deposit() {
     // Now we can create a proposal.
     app.execute_contract(
         Addr::unchecked("blue"),
-        govmod_single,
+        govmod,
         &ExecuteMsg::Propose {
             title: "A simple text proposal".to_string(),
             description: "This is a simple text proposal".to_string(),
@@ -1766,11 +1731,11 @@ fn test_deposit_return_on_execute() {
     let governance_modules = gov_state.proposal_modules;
 
     assert_eq!(governance_modules.len(), 1);
-    let govmod_single = governance_modules.into_iter().next().unwrap();
+    let govmod = governance_modules.into_iter().next().unwrap();
 
     let govmod_config: Config = app
         .wrap()
-        .query_wasm_smart(govmod_single.clone(), &QueryMsg::Config {})
+        .query_wasm_smart(govmod.clone(), &QueryMsg::Config {})
         .unwrap();
     let CheckedDepositInfo { token, .. } = govmod_config.deposit_info.unwrap();
     let balance: cw20::BalanceResponse = app
@@ -1791,7 +1756,7 @@ fn test_deposit_return_on_execute() {
     // refunded.
     app.execute_contract(
         Addr::unchecked("blue"),
-        govmod_single,
+        govmod,
         &ExecuteMsg::Execute { proposal_id: 1 },
         &[],
     )
@@ -1809,6 +1774,72 @@ fn test_deposit_return_on_execute() {
 
     // Proposal has been executed so deposit has been refunded.
     assert_eq!(balance.balance, Uint128::new(10));
+}
+
+#[test]
+fn test_query_list_votes() {
+    // Will create a proposal and execute it, one token will be
+    // deposited to create said proposal, expectation is that the
+    // token is then returned once the proposal is executed.
+    let (app, governance_addr) = do_test_votes_cw20_balances(
+        vec![
+            TestMultipleChoiceVote {
+                voter: "blue".to_string(),
+                position: MultipleChoiceVote { option_id: 0 },
+                weight: Uint128::new(10),
+                should_execute: ShouldExecute::Yes,
+            },
+            TestMultipleChoiceVote {
+                voter: "note".to_string(),
+                position: MultipleChoiceVote { option_id: 1 },
+                weight: Uint128::new(20),
+                should_execute: ShouldExecute::Yes,
+            },
+        ],
+        VotingStrategy::SingleChoice {
+            quorum: PercentageThreshold::Majority {},
+        },
+        Status::Passed,
+        None,
+        None,
+        true,
+    );
+
+    let gov_state: cw_core::query::DumpStateResponse = app
+        .wrap()
+        .query_wasm_smart(governance_addr, &cw_core::msg::QueryMsg::DumpState {})
+        .unwrap();
+    let governance_modules = gov_state.proposal_modules;
+
+    assert_eq!(governance_modules.len(), 1);
+    let govmod = governance_modules.into_iter().next().unwrap();
+
+    let list_votes: VoteListResponse = app
+        .wrap()
+        .query_wasm_smart(
+            govmod,
+            &QueryMsg::ListVotes {
+                proposal_id: 1,
+                start_after: None,
+                limit: None,
+            },
+        )
+        .unwrap();
+
+    let expected = vec![
+        VoteInfo {
+            voter: Addr::unchecked("blue"),
+            vote: MultipleChoiceVote { option_id: 0 },
+            power: Uint128::new(10),
+        },
+        VoteInfo {
+            voter: Addr::unchecked("note"),
+            vote: MultipleChoiceVote { option_id: 1 },
+            power: Uint128::new(20),
+        },
+    ];
+
+    assert_eq!(list_votes.votes, expected)
 }
 
 #[test]
@@ -1837,12 +1868,12 @@ fn test_cant_vote_executed_or_closed() {
     let governance_modules = gov_state.proposal_modules;
 
     assert_eq!(governance_modules.len(), 1);
-    let govmod_single = governance_modules.into_iter().next().unwrap();
+    let govmod = governance_modules.into_iter().next().unwrap();
 
     // Close the proposal
     app.execute_contract(
         Addr::unchecked("blue"),
-        govmod_single.clone(),
+        govmod.clone(),
         &ExecuteMsg::Close { proposal_id: 1 },
         &[],
     )
@@ -1851,7 +1882,7 @@ fn test_cant_vote_executed_or_closed() {
     // Try to vote, should error
     app.execute_contract(
         Addr::unchecked("blue"),
-        govmod_single.clone(),
+        govmod.clone(),
         &ExecuteMsg::Vote {
             proposal_id: 1,
             vote: MultipleChoiceVote { option_id: 0 },
@@ -1861,7 +1892,7 @@ fn test_cant_vote_executed_or_closed() {
     .unwrap_err();
 
     // Create a proposal that will pass
-    let (mut app, governance_addr) = do_test_votes_cw20_balances(
+    let (mut app, _governance_addr) = do_test_votes_cw20_balances(
         vec![TestMultipleChoiceVote {
             voter: "blue".to_string(),
             position: MultipleChoiceVote { option_id: 0 },
@@ -1880,7 +1911,7 @@ fn test_cant_vote_executed_or_closed() {
     // Execute the proposal
     app.execute_contract(
         Addr::unchecked("blue"),
-        govmod_single.clone(),
+        govmod.clone(),
         &ExecuteMsg::Execute { proposal_id: 1 },
         &[],
     )
@@ -1889,7 +1920,7 @@ fn test_cant_vote_executed_or_closed() {
     // Try to vote, should error
     app.execute_contract(
         Addr::unchecked("blue"),
-        govmod_single.clone(),
+        govmod,
         &ExecuteMsg::Vote {
             proposal_id: 1,
             vote: MultipleChoiceVote { option_id: 0 },
@@ -1897,6 +1928,235 @@ fn test_cant_vote_executed_or_closed() {
         &[],
     )
     .unwrap_err();
+}
+
+#[test]
+fn test_cant_propose_zero_power() {
+    let mut app = App::default();
+    let govmod_id = app.store_code(proposal_contract());
+    let quorum = PercentageThreshold::Percent(Decimal::percent(10));
+    let voting_strategy = VotingStrategy::SingleChoice { quorum };
+    let max_voting_period = cw_utils::Duration::Height(6);
+    let instantiate = InstantiateMsg {
+        min_voting_period: None,
+        max_voting_period,
+        only_members_execute: false,
+        deposit_info: Some(DepositInfo {
+            token: DepositToken::VotingModuleToken {},
+            deposit: Uint128::new(1),
+            refund_failed_proposals: true,
+        }),
+        voting_strategy,
+    };
+
+    let core_addr = instantiate_with_staked_balances_governance(
+        &mut app,
+        govmod_id,
+        to_binary(&instantiate).unwrap(),
+        Some(vec![
+            Cw20Coin {
+                address: "blue".to_string(),
+                amount: Uint128::new(1),
+            },
+            Cw20Coin {
+                address: "blue2".to_string(),
+                amount: Uint128::new(10),
+            },
+        ]),
+    );
+
+    let gov_state: cw_core::query::DumpStateResponse = app
+        .wrap()
+        .query_wasm_smart(core_addr, &cw_core::msg::QueryMsg::DumpState {})
+        .unwrap();
+    let proposal_modules = gov_state.proposal_modules;
+
+    assert_eq!(proposal_modules.len(), 1);
+    let govmod = proposal_modules.into_iter().next().unwrap();
+
+    let options = vec![
+        MultipleChoiceOption {
+            description: "multiple choice option 1".to_string(),
+            msgs: None,
+        },
+        MultipleChoiceOption {
+            description: "multiple choice option 2".to_string(),
+            msgs: None,
+        },
+    ];
+
+    let mc_options = MultipleChoiceOptions { options };
+
+    // Should fail as blue has 0 power after proposal deposit
+    let err = app
+        .execute_contract(
+            Addr::unchecked("blue"),
+            govmod,
+            &ExecuteMsg::Propose {
+                title: "A simple text proposal".to_string(),
+                description: "A simple text proposal".to_string(),
+                choices: mc_options,
+            },
+            &[],
+        )
+        .unwrap_err();
+
+    println!("{:?}", err)
+}
+
+#[test]
+fn test_cant_vote_not_registered() {
+    let (mut app, governance_addr) = do_test_votes_cw20_balances(
+        vec![TestMultipleChoiceVote {
+            voter: "blue".to_string(),
+            position: MultipleChoiceVote { option_id: 2 },
+            weight: Uint128::new(10),
+            should_execute: ShouldExecute::Yes,
+        }],
+        VotingStrategy::SingleChoice {
+            quorum: PercentageThreshold::Majority {},
+        },
+        Status::Open,
+        Some(Uint128::new(100)),
+        Some(DepositInfo {
+            token: DepositToken::VotingModuleToken {},
+            deposit: Uint128::new(1),
+            refund_failed_proposals: true,
+        }),
+        false,
+    );
+
+    let gov_state: cw_core::query::DumpStateResponse = app
+        .wrap()
+        .query_wasm_smart(governance_addr, &cw_core::msg::QueryMsg::DumpState {})
+        .unwrap();
+    let governance_modules = gov_state.proposal_modules;
+
+    assert_eq!(governance_modules.len(), 1);
+    let govmod = governance_modules.into_iter().next().unwrap();
+
+    // Should error as blue2 is not registered to vote
+    let err = app
+        .execute_contract(
+            Addr::unchecked("blue2"),
+            govmod,
+            &ExecuteMsg::Vote {
+                proposal_id: 1,
+                vote: MultipleChoiceVote { option_id: 0 },
+            },
+            &[],
+        )
+        .unwrap_err();
+
+    assert!(matches!(
+        err.downcast().unwrap(),
+        ContractError::NotRegistered {}
+    ))
+}
+
+#[test]
+fn test_cant_execute_not_member() {
+    // Create proposal with only_members_execute: true
+    let mut app = App::default();
+    let govmod_id = app.store_code(proposal_contract());
+
+    let max_voting_period = cw_utils::Duration::Height(6);
+    let quorum = PercentageThreshold::Majority {};
+
+    let voting_strategy = VotingStrategy::SingleChoice { quorum };
+
+    let instantiate = InstantiateMsg {
+        min_voting_period: None,
+        max_voting_period,
+        only_members_execute: true,
+        deposit_info: None,
+        voting_strategy,
+    };
+
+    let governance_addr = instantiate_with_cw20_balances_governance(
+        &mut app,
+        govmod_id,
+        to_binary(&instantiate).unwrap(),
+        Some(vec![Cw20Coin {
+            address: "blue".to_string(),
+            amount: Uint128::new(10),
+        }]),
+    );
+
+    let governance_modules: Vec<Addr> = app
+        .wrap()
+        .query_wasm_smart(
+            governance_addr.clone(),
+            &cw_core::msg::QueryMsg::ProposalModules {
+                start_at: None,
+                limit: None,
+            },
+        )
+        .unwrap();
+
+    assert_eq!(governance_modules.len(), 1);
+
+    let gov_state: cw_core::query::DumpStateResponse = app
+        .wrap()
+        .query_wasm_smart(governance_addr, &cw_core::msg::QueryMsg::DumpState {})
+        .unwrap();
+    let governance_modules = gov_state.proposal_modules;
+
+    assert_eq!(governance_modules.len(), 1);
+    let govmod = governance_modules.into_iter().next().unwrap();
+
+    // Create proposal
+    let options = vec![
+        MultipleChoiceOption {
+            description: "multiple choice option 1".to_string(),
+            msgs: None,
+        },
+        MultipleChoiceOption {
+            description: "multiple choice option 2".to_string(),
+            msgs: None,
+        },
+    ];
+
+    let mc_options = MultipleChoiceOptions { options };
+
+    app.execute_contract(
+        Addr::unchecked("blue"),
+        govmod.clone(),
+        &ExecuteMsg::Propose {
+            title: "A simple text proposal".to_string(),
+            description: "A simple text proposal".to_string(),
+            choices: mc_options,
+        },
+        &[],
+    )
+    .unwrap();
+
+    // Proposal should pass after this vote
+    app.execute_contract(
+        Addr::unchecked("blue"),
+        govmod.clone(),
+        &ExecuteMsg::Vote {
+            proposal_id: 1,
+            vote: MultipleChoiceVote { option_id: 0 },
+        },
+        &[],
+    )
+    .unwrap();
+
+    // Execute should error as blue2 is not a member
+    let err = app
+        .execute_contract(
+            Addr::unchecked("blue2"),
+            govmod,
+            &ExecuteMsg::Execute { proposal_id: 1 },
+            &[],
+        )
+        .unwrap_err();
+
+    assert!(matches!(
+        err.downcast().unwrap(),
+        ContractError::Unauthorized {}
+    ))
 }
 
 #[test]
@@ -1928,13 +2188,13 @@ fn test_close_open_proposal() {
     let governance_modules = gov_state.proposal_modules;
 
     assert_eq!(governance_modules.len(), 1);
-    let govmod_single = governance_modules.into_iter().next().unwrap();
+    let govmod = governance_modules.into_iter().next().unwrap();
 
     // Close the proposal, this should error as the proposal is still
     // open and not expired.
     app.execute_contract(
         Addr::unchecked("blue"),
-        govmod_single.clone(),
+        govmod.clone(),
         &ExecuteMsg::Close { proposal_id: 1 },
         &[],
     )
@@ -1947,7 +2207,7 @@ fn test_close_open_proposal() {
     // open and expired.
     app.execute_contract(
         Addr::unchecked("blue"),
-        govmod_single.clone(),
+        govmod.clone(),
         &ExecuteMsg::Close { proposal_id: 1 },
         &[],
     )
@@ -1956,7 +2216,7 @@ fn test_close_open_proposal() {
     // Check that a refund was issued.
     let govmod_config: Config = app
         .wrap()
-        .query_wasm_smart(govmod_single, &QueryMsg::Config {})
+        .query_wasm_smart(govmod, &QueryMsg::Config {})
         .unwrap();
     let CheckedDepositInfo { token, .. } = govmod_config.deposit_info.unwrap();
     let balance: cw20::BalanceResponse = app
@@ -2003,7 +2263,7 @@ fn test_no_refund_failed_proposal() {
     let governance_modules = gov_state.proposal_modules;
 
     assert_eq!(governance_modules.len(), 1);
-    let govmod_single = governance_modules.into_iter().next().unwrap();
+    let govmod = governance_modules.into_iter().next().unwrap();
 
     // Make the proposal expire.
     app.update_block(|block| block.height += 10);
@@ -2012,7 +2272,7 @@ fn test_no_refund_failed_proposal() {
     // open and expired.
     app.execute_contract(
         Addr::unchecked("blue"),
-        govmod_single.clone(),
+        govmod.clone(),
         &ExecuteMsg::Close { proposal_id: 1 },
         &[],
     )
@@ -2021,7 +2281,7 @@ fn test_no_refund_failed_proposal() {
     // Check that a refund was issued.
     let govmod_config: Config = app
         .wrap()
-        .query_wasm_smart(govmod_single, &QueryMsg::Config {})
+        .query_wasm_smart(govmod, &QueryMsg::Config {})
         .unwrap();
     let CheckedDepositInfo { token, .. } = govmod_config.deposit_info.unwrap();
     let balance: cw20::BalanceResponse = app
@@ -2173,7 +2433,7 @@ fn test_execute_expired_proposal() {
     let proposal_modules = gov_state.proposal_modules;
 
     assert_eq!(proposal_modules.len(), 1);
-    let proposal_single = proposal_modules.into_iter().next().unwrap();
+    let govmod = proposal_modules.into_iter().next().unwrap();
 
     let options = vec![
         MultipleChoiceOption {
@@ -2190,11 +2450,11 @@ fn test_execute_expired_proposal() {
 
     app.execute_contract(
         Addr::unchecked("blue"),
-        proposal_single.clone(),
+        govmod.clone(),
         &ExecuteMsg::Propose {
             title: "A simple text proposal".to_string(),
             description: "A simple text proposal".to_string(),
-            choices: mc_options.clone(),
+            choices: mc_options,
         },
         &[],
     )
@@ -2202,7 +2462,7 @@ fn test_execute_expired_proposal() {
 
     app.execute_contract(
         Addr::unchecked("blue"),
-        proposal_single.clone(),
+        govmod.clone(),
         &ExecuteMsg::Vote {
             proposal_id: 1,
             vote: MultipleChoiceVote { option_id: 0 },
@@ -2214,10 +2474,7 @@ fn test_execute_expired_proposal() {
     // Proposal has now reached quorum but should not be passed.
     let proposal: ProposalResponse = app
         .wrap()
-        .query_wasm_smart(
-            proposal_single.clone(),
-            &QueryMsg::Proposal { proposal_id: 1 },
-        )
+        .query_wasm_smart(govmod.clone(), &QueryMsg::Proposal { proposal_id: 1 })
         .unwrap();
     assert_eq!(proposal.proposal.status, Status::Open);
 
@@ -2226,10 +2483,7 @@ fn test_execute_expired_proposal() {
 
     let proposal: ProposalResponse = app
         .wrap()
-        .query_wasm_smart(
-            proposal_single.clone(),
-            &QueryMsg::Proposal { proposal_id: 1 },
-        )
+        .query_wasm_smart(govmod.clone(), &QueryMsg::Proposal { proposal_id: 1 })
         .unwrap();
     assert_eq!(proposal.proposal.status, Status::Passed);
 
@@ -2237,7 +2491,7 @@ fn test_execute_expired_proposal() {
     // passed.
     app.execute_contract(
         Addr::unchecked("blue"),
-        proposal_single.clone(),
+        govmod.clone(),
         &ExecuteMsg::Close { proposal_id: 1 },
         &[],
     )
@@ -2247,7 +2501,7 @@ fn test_execute_expired_proposal() {
     // is technically expired.
     app.execute_contract(
         Addr::unchecked("blue"),
-        proposal_single.clone(),
+        govmod.clone(),
         &ExecuteMsg::Execute { proposal_id: 1 },
         &[],
     )
@@ -2256,7 +2510,7 @@ fn test_execute_expired_proposal() {
     // Can't execute more than once.
     app.execute_contract(
         Addr::unchecked("blue"),
-        proposal_single.clone(),
+        govmod.clone(),
         &ExecuteMsg::Execute { proposal_id: 1 },
         &[],
     )
@@ -2264,7 +2518,7 @@ fn test_execute_expired_proposal() {
 
     let proposal: ProposalResponse = app
         .wrap()
-        .query_wasm_smart(proposal_single, &QueryMsg::Proposal { proposal_id: 1 })
+        .query_wasm_smart(govmod, &QueryMsg::Proposal { proposal_id: 1 })
         .unwrap();
     assert_eq!(proposal.proposal.status, Status::Executed);
 }
@@ -2298,11 +2552,11 @@ fn test_update_config() {
     let governance_modules = gov_state.proposal_modules;
 
     assert_eq!(governance_modules.len(), 1);
-    let govmod_single = governance_modules.into_iter().next().unwrap();
+    let govmod = governance_modules.into_iter().next().unwrap();
 
     let govmod_config: Config = app
         .wrap()
-        .query_wasm_smart(govmod_single.clone(), &QueryMsg::Config {})
+        .query_wasm_smart(govmod.clone(), &QueryMsg::Config {})
         .unwrap();
 
     assert_eq!(
@@ -2318,7 +2572,7 @@ fn test_update_config() {
     // should fail as it is unauthorized.
     app.execute_contract(
         Addr::unchecked("wrong"),
-        govmod_single.clone(),
+        govmod.clone(),
         &ExecuteMsg::UpdateConfig {
             voting_strategy: VotingStrategy::SingleChoice {
                 quorum: PercentageThreshold::Majority {},
@@ -2326,7 +2580,7 @@ fn test_update_config() {
             min_voting_period: None,
             max_voting_period: cw_utils::Duration::Height(10),
             only_members_execute: false,
-            dao: dao.clone().to_string(),
+            dao: dao.to_string(),
             deposit_info: None,
         },
         &[],
@@ -2336,7 +2590,7 @@ fn test_update_config() {
     // Update the config from the DAO address. This should succeed.
     app.execute_contract(
         dao.clone(),
-        govmod_single.clone(),
+        govmod.clone(),
         &ExecuteMsg::UpdateConfig {
             voting_strategy: VotingStrategy::SingleChoice {
                 quorum: PercentageThreshold::Majority {},
@@ -2353,7 +2607,7 @@ fn test_update_config() {
 
     let govmod_config: Config = app
         .wrap()
-        .query_wasm_smart(govmod_single.clone(), &QueryMsg::Config {})
+        .query_wasm_smart(govmod.clone(), &QueryMsg::Config {})
         .unwrap();
 
     let expected = Config {
@@ -2372,7 +2626,7 @@ fn test_update_config() {
     // the original one should now fail.
     app.execute_contract(
         dao,
-        govmod_single,
+        govmod,
         &ExecuteMsg::UpdateConfig {
             voting_strategy: VotingStrategy::SingleChoice {
                 quorum: PercentageThreshold::Majority {},
@@ -2416,11 +2670,11 @@ fn test_no_return_if_no_refunds() {
     let governance_modules = gov_state.proposal_modules;
 
     assert_eq!(governance_modules.len(), 1);
-    let govmod_single = governance_modules.into_iter().next().unwrap();
+    let govmod = governance_modules.into_iter().next().unwrap();
 
     let govmod_config: Config = app
         .wrap()
-        .query_wasm_smart(govmod_single.clone(), &QueryMsg::Config {})
+        .query_wasm_smart(govmod.clone(), &QueryMsg::Config {})
         .unwrap();
     let CheckedDepositInfo { token, .. } = govmod_config.deposit_info.unwrap();
 
@@ -2428,7 +2682,7 @@ fn test_no_return_if_no_refunds() {
     // refunded.
     app.execute_contract(
         Addr::unchecked("blue"),
-        govmod_single,
+        govmod,
         &ExecuteMsg::Close { proposal_id: 1 },
         &[],
     )
@@ -2499,7 +2753,7 @@ fn test_query_list_proposals() {
 
     let mc_options = MultipleChoiceOptions { options };
 
-    for i in 1..10 {
+    for _i in 1..10 {
         app.execute_contract(
             Addr::unchecked(CREATOR_ADDR),
             govmod.clone(),
@@ -2642,24 +2896,24 @@ fn test_hooks() {
         .unwrap();
 
     assert_eq!(governance_modules.len(), 1);
-    let govmod_single = governance_modules.into_iter().next().unwrap();
+    let govmod = governance_modules.into_iter().next().unwrap();
 
     let govmod_config: Config = app
         .wrap()
-        .query_wasm_smart(govmod_single.clone(), &QueryMsg::Config {})
+        .query_wasm_smart(govmod.clone(), &QueryMsg::Config {})
         .unwrap();
     let dao = govmod_config.dao;
 
     // Expect no hooks
     let hooks: HooksResponse = app
         .wrap()
-        .query_wasm_smart(govmod_single.clone(), &QueryMsg::ProposalHooks {})
+        .query_wasm_smart(govmod.clone(), &QueryMsg::ProposalHooks {})
         .unwrap();
     assert_eq!(hooks.hooks.len(), 0);
 
     let hooks: HooksResponse = app
         .wrap()
-        .query_wasm_smart(govmod_single.clone(), &QueryMsg::VoteHooks {})
+        .query_wasm_smart(govmod.clone(), &QueryMsg::VoteHooks {})
         .unwrap();
     assert_eq!(hooks.hooks.len(), 0);
 
@@ -2669,35 +2923,30 @@ fn test_hooks() {
 
     // Expect error as sender is not DAO
     let _err = app
-        .execute_contract(
-            Addr::unchecked(CREATOR_ADDR),
-            govmod_single.clone(),
-            &msg,
-            &[],
-        )
+        .execute_contract(Addr::unchecked(CREATOR_ADDR), govmod.clone(), &msg, &[])
         .unwrap_err();
 
     // Expect success as sender is now DAO
     let _res = app
-        .execute_contract(dao.clone(), govmod_single.clone(), &msg, &[])
+        .execute_contract(dao.clone(), govmod.clone(), &msg, &[])
         .unwrap();
 
     let hooks: HooksResponse = app
         .wrap()
-        .query_wasm_smart(govmod_single.clone(), &QueryMsg::ProposalHooks {})
+        .query_wasm_smart(govmod.clone(), &QueryMsg::ProposalHooks {})
         .unwrap();
     assert_eq!(hooks.hooks.len(), 1);
 
     // Expect error as hook is already set
     let _err = app
-        .execute_contract(dao.clone(), govmod_single.clone(), &msg, &[])
+        .execute_contract(dao.clone(), govmod.clone(), &msg, &[])
         .unwrap_err();
 
     // Expect error as hook does not exist
     let _err = app
         .execute_contract(
             dao.clone(),
-            govmod_single.clone(),
+            govmod.clone(),
             &ExecuteMsg::RemoveProposalHook {
                 address: "not_exist".to_string(),
             },
@@ -2711,17 +2960,12 @@ fn test_hooks() {
 
     // Expect error as sender is not DAO
     let _err = app
-        .execute_contract(
-            Addr::unchecked(CREATOR_ADDR),
-            govmod_single.clone(),
-            &msg,
-            &[],
-        )
+        .execute_contract(Addr::unchecked(CREATOR_ADDR), govmod.clone(), &msg, &[])
         .unwrap_err();
 
     // Expect success
     let _res = app
-        .execute_contract(dao.clone(), govmod_single.clone(), &msg, &[])
+        .execute_contract(dao.clone(), govmod.clone(), &msg, &[])
         .unwrap();
 
     let msg = ExecuteMsg::AddVoteHook {
@@ -2730,35 +2974,30 @@ fn test_hooks() {
 
     // Expect error as sender is not DAO
     let _err = app
-        .execute_contract(
-            Addr::unchecked(CREATOR_ADDR),
-            govmod_single.clone(),
-            &msg,
-            &[],
-        )
+        .execute_contract(Addr::unchecked(CREATOR_ADDR), govmod.clone(), &msg, &[])
         .unwrap_err();
 
     // Expect success as sender is now DAO
     let _res = app
-        .execute_contract(dao.clone(), govmod_single.clone(), &msg, &[])
+        .execute_contract(dao.clone(), govmod.clone(), &msg, &[])
         .unwrap();
 
     let hooks: HooksResponse = app
         .wrap()
-        .query_wasm_smart(govmod_single.clone(), &QueryMsg::VoteHooks {})
+        .query_wasm_smart(govmod.clone(), &QueryMsg::VoteHooks {})
         .unwrap();
     assert_eq!(hooks.hooks.len(), 1);
 
     // Expect error as hook is already set
     let _err = app
-        .execute_contract(dao.clone(), govmod_single.clone(), &msg, &[])
+        .execute_contract(dao.clone(), govmod.clone(), &msg, &[])
         .unwrap_err();
 
     // Expect error as hook does not exist
     let _err = app
         .execute_contract(
             dao.clone(),
-            govmod_single.clone(),
+            govmod.clone(),
             &ExecuteMsg::RemoveVoteHook {
                 address: "not_exist".to_string(),
             },
@@ -2772,16 +3011,11 @@ fn test_hooks() {
 
     // Expect error as sender is not DAO
     let _err = app
-        .execute_contract(
-            Addr::unchecked(CREATOR_ADDR),
-            govmod_single.clone(),
-            &msg,
-            &[],
-        )
+        .execute_contract(Addr::unchecked(CREATOR_ADDR), govmod.clone(), &msg, &[])
         .unwrap_err();
 
     // Expect success
-    let _res = app.execute_contract(dao, govmod_single, &msg, &[]).unwrap();
+    let _res = app.execute_contract(dao, govmod, &msg, &[]).unwrap();
 }
 
 #[test]
@@ -2821,11 +3055,11 @@ fn test_active_threshold_absolute() {
         .unwrap();
 
     assert_eq!(governance_modules.len(), 1);
-    let govmod_single = governance_modules.into_iter().next().unwrap();
+    let govmod = governance_modules.into_iter().next().unwrap();
 
     let govmod_config: Config = app
         .wrap()
-        .query_wasm_smart(govmod_single.clone(), &QueryMsg::Config {})
+        .query_wasm_smart(govmod.clone(), &QueryMsg::Config {})
         .unwrap();
     let dao = govmod_config.dao;
     let voting_module: Addr = app
@@ -2864,7 +3098,7 @@ fn test_active_threshold_absolute() {
     let _err = app
         .execute_contract(
             Addr::unchecked(CREATOR_ADDR),
-            govmod_single.clone(),
+            govmod.clone(),
             &crate::msg::ExecuteMsg::Propose {
                 title: "A simple text proposal".to_string(),
                 description: "This is a simple text proposal".to_string(),
@@ -2888,7 +3122,7 @@ fn test_active_threshold_absolute() {
     let _res = app
         .execute_contract(
             Addr::unchecked(CREATOR_ADDR),
-            govmod_single.clone(),
+            govmod.clone(),
             &crate::msg::ExecuteMsg::Propose {
                 title: "A simple text proposal".to_string(),
                 description: "This is a simple text proposal".to_string(),
@@ -2910,11 +3144,11 @@ fn test_active_threshold_absolute() {
     let _err = app
         .execute_contract(
             Addr::unchecked(CREATOR_ADDR),
-            govmod_single,
+            govmod,
             &crate::msg::ExecuteMsg::Propose {
                 title: "A simple text proposal".to_string(),
                 description: "This is a simple text proposal".to_string(),
-                choices: mc_options.clone(),
+                choices: mc_options,
             },
             &[],
         )
@@ -3047,11 +3281,11 @@ fn test_active_threshold_percent() {
     let _res = app
         .execute_contract(
             Addr::unchecked(CREATOR_ADDR),
-            govmod.clone(),
+            govmod,
             &ExecuteMsg::Propose {
                 title: "A simple text proposal".to_string(),
                 description: "A simple text proposal".to_string(),
-                choices: mc_options.clone(),
+                choices: mc_options,
             },
             &[],
         )
@@ -3092,11 +3326,11 @@ fn test_active_threshold_none() {
         .unwrap();
 
     assert_eq!(governance_modules.len(), 1);
-    let govmod_single = governance_modules.into_iter().next().unwrap();
+    let govmod = governance_modules.into_iter().next().unwrap();
 
     let govmod_config: Config = app
         .wrap()
-        .query_wasm_smart(govmod_single.clone(), &QueryMsg::Config {})
+        .query_wasm_smart(govmod.clone(), &QueryMsg::Config {})
         .unwrap();
     let dao = govmod_config.dao;
     let voting_module: Addr = app
@@ -3145,7 +3379,7 @@ fn test_active_threshold_none() {
     let _res = app
         .execute_contract(
             Addr::unchecked(CREATOR_ADDR),
-            govmod_single,
+            govmod,
             &ExecuteMsg::Propose {
                 title: "A simple text proposal".to_string(),
                 description: "A simple text proposal".to_string(),
@@ -3157,10 +3391,10 @@ fn test_active_threshold_none() {
 
     // Now try with balance voting to test when IsActive is not implemented
     // on the contract
-    let threshold = Threshold::AbsolutePercentage {
+    let _threshold = Threshold::AbsolutePercentage {
         percentage: PercentageThreshold::Majority {},
     };
-    let max_voting_period = cw_utils::Duration::Height(6);
+    let _max_voting_period = cw_utils::Duration::Height(6);
 
     let governance_addr = instantiate_with_cw20_balances_governance(
         &mut app,
@@ -3180,17 +3414,17 @@ fn test_active_threshold_none() {
         .unwrap();
 
     assert_eq!(governance_modules.len(), 1);
-    let govmod_single = governance_modules.into_iter().next().unwrap();
+    let govmod = governance_modules.into_iter().next().unwrap();
 
     // Try and create a proposal, will succeed as IsActive is not implemented
     let _res = app
         .execute_contract(
             Addr::unchecked(CREATOR_ADDR),
-            govmod_single,
+            govmod,
             &ExecuteMsg::Propose {
                 title: "A simple text proposal".to_string(),
                 description: "A simple text proposal".to_string(),
-                choices: mc_options.clone(),
+                choices: mc_options,
             },
             &[],
         )
