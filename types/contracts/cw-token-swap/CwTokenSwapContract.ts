@@ -7,15 +7,9 @@
 import { CosmWasmClient, ExecuteResult, SigningCosmWasmClient } from "@cosmjs/cosmwasm-stargate";
 import { Coin, StdFee } from "@cosmjs/amino";
 export type ExecuteMsg = {
-  update_config: {
-    owner: string;
-    reward_rate: Uint128;
-    reward_token: string;
-    staking_addr: string;
-    [k: string]: unknown;
-  };
+  receive: Cw20ReceiveMsg;
 } | {
-  distribute: {
+  fund: {
     [k: string]: unknown;
   };
 } | {
@@ -24,70 +18,102 @@ export type ExecuteMsg = {
   };
 };
 export type Uint128 = string;
-export type Addr = string;
-export interface InfoResponse {
-  balance: Uint128;
-  config: Config;
-  last_payment_block: number;
+export type Binary = string;
+export interface Cw20ReceiveMsg {
+  amount: Uint128;
+  msg: Binary;
+  sender: string;
   [k: string]: unknown;
 }
-export interface Config {
-  owner: Addr;
-  reward_rate: Uint128;
-  reward_token: Addr;
-  staking_addr: Addr;
-  [k: string]: unknown;
-}
-export interface InstantiateMsg {
-  owner: string;
-  reward_rate: Uint128;
-  reward_token: string;
-  staking_addr: string;
-  [k: string]: unknown;
-}
-export type QueryMsg = {
-  info: {
+export type TokenInfo = {
+  native: {
+    amount: Uint128;
+    denom: string;
+    [k: string]: unknown;
+  };
+} | {
+  cw20: {
+    amount: Uint128;
+    contract_addr: string;
     [k: string]: unknown;
   };
 };
-export interface Cw20StakeRewardDistributorReadOnlyInterface {
-  contractAddress: string;
-  info: () => Promise<InfoResponse>;
+export interface InstantiateMsg {
+  counterparty_one: Counterparty;
+  counterparty_two: Counterparty;
+  [k: string]: unknown;
 }
-export class Cw20StakeRewardDistributorQueryClient implements Cw20StakeRewardDistributorReadOnlyInterface {
+export interface Counterparty {
+  address: string;
+  promise: TokenInfo;
+  [k: string]: unknown;
+}
+export type QueryMsg = {
+  status: {
+    [k: string]: unknown;
+  };
+};
+export type Addr = string;
+export type CheckedTokenInfo = {
+  native: {
+    amount: Uint128;
+    denom: string;
+    [k: string]: unknown;
+  };
+} | {
+  cw20: {
+    amount: Uint128;
+    contract_addr: Addr;
+    [k: string]: unknown;
+  };
+};
+export interface StatusResponse {
+  counterparty_one: CheckedCounterparty;
+  counterparty_two: CheckedCounterparty;
+  [k: string]: unknown;
+}
+export interface CheckedCounterparty {
+  address: Addr;
+  promise: CheckedTokenInfo;
+  provided: boolean;
+  [k: string]: unknown;
+}
+export interface CwTokenSwapReadOnlyInterface {
+  contractAddress: string;
+  status: () => Promise<StatusResponse>;
+}
+export class CwTokenSwapQueryClient implements CwTokenSwapReadOnlyInterface {
   client: CosmWasmClient;
   contractAddress: string;
 
   constructor(client: CosmWasmClient, contractAddress: string) {
     this.client = client;
     this.contractAddress = contractAddress;
-    this.info = this.info.bind(this);
+    this.status = this.status.bind(this);
   }
 
-  info = async (): Promise<InfoResponse> => {
+  status = async (): Promise<StatusResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
-      info: {}
+      status: {}
     });
   };
 }
-export interface Cw20StakeRewardDistributorInterface extends Cw20StakeRewardDistributorReadOnlyInterface {
+export interface CwTokenSwapInterface extends CwTokenSwapReadOnlyInterface {
   contractAddress: string;
   sender: string;
-  updateConfig: ({
-    owner,
-    rewardRate,
-    rewardToken,
-    stakingAddr
+  receive: ({
+    amount,
+    msg,
+    sender
   }: {
-    owner: string;
-    rewardRate: string;
-    rewardToken: string;
-    stakingAddr: string;
+    amount: string;
+    msg: string;
+    sender: string;
   }, fee?: number | StdFee | "auto", memo?: string, funds?: readonly Coin[]) => Promise<ExecuteResult>;
-  distribute: (fee?: number | StdFee | "auto", memo?: string, funds?: readonly Coin[]) => Promise<ExecuteResult>;
+  fund: (fee?: number | StdFee | "auto", memo?: string, funds?: readonly Coin[]) => Promise<ExecuteResult>;
   withdraw: (fee?: number | StdFee | "auto", memo?: string, funds?: readonly Coin[]) => Promise<ExecuteResult>;
 }
-export class Cw20StakeRewardDistributorClient extends Cw20StakeRewardDistributorQueryClient implements Cw20StakeRewardDistributorInterface {
+export class CwTokenSwapClient extends CwTokenSwapQueryClient implements CwTokenSwapInterface {
   client: SigningCosmWasmClient;
   sender: string;
   contractAddress: string;
@@ -97,34 +123,31 @@ export class Cw20StakeRewardDistributorClient extends Cw20StakeRewardDistributor
     this.client = client;
     this.sender = sender;
     this.contractAddress = contractAddress;
-    this.updateConfig = this.updateConfig.bind(this);
-    this.distribute = this.distribute.bind(this);
+    this.receive = this.receive.bind(this);
+    this.fund = this.fund.bind(this);
     this.withdraw = this.withdraw.bind(this);
   }
 
-  updateConfig = async ({
-    owner,
-    rewardRate,
-    rewardToken,
-    stakingAddr
+  receive = async ({
+    amount,
+    msg,
+    sender
   }: {
-    owner: string;
-    rewardRate: string;
-    rewardToken: string;
-    stakingAddr: string;
+    amount: string;
+    msg: string;
+    sender: string;
   }, fee: number | StdFee | "auto" = "auto", memo?: string, funds?: readonly Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      update_config: {
-        owner,
-        reward_rate: rewardRate,
-        reward_token: rewardToken,
-        staking_addr: stakingAddr
+      receive: {
+        amount,
+        msg,
+        sender
       }
     }, fee, memo, funds);
   };
-  distribute = async (fee: number | StdFee | "auto" = "auto", memo?: string, funds?: readonly Coin[]): Promise<ExecuteResult> => {
+  fund = async (fee: number | StdFee | "auto" = "auto", memo?: string, funds?: readonly Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      distribute: {}
+      fund: {}
     }, fee, memo, funds);
   };
   withdraw = async (fee: number | StdFee | "auto" = "auto", memo?: string, funds?: readonly Coin[]): Promise<ExecuteResult> => {
