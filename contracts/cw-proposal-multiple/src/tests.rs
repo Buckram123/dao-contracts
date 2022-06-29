@@ -1949,7 +1949,7 @@ fn test_cant_propose_zero_power() {
         voting_strategy,
     };
 
-    let core_addr = instantiate_with_staked_balances_governance(
+    let core_addr = instantiate_with_cw20_balances_governance(
         &mut app,
         govmod_id,
         to_binary(&instantiate).unwrap(),
@@ -1987,7 +1987,41 @@ fn test_cant_propose_zero_power() {
 
     let mc_options = MultipleChoiceOptions { options };
 
-    // Should fail as blue has 0 power after proposal deposit
+    let config: Config = app
+        .wrap()
+        .query_wasm_smart(govmod.clone(), &QueryMsg::Config {})
+        .unwrap();
+    if let Some(CheckedDepositInfo {
+        ref token, deposit, ..
+    }) = config.deposit_info
+    {
+        app.execute_contract(
+            Addr::unchecked("blue"),
+            token.clone(),
+            &cw20_base::msg::ExecuteMsg::IncreaseAllowance {
+                spender: govmod.to_string(),
+                amount: deposit,
+                expires: None,
+            },
+            &[],
+        )
+        .unwrap();
+    }
+
+    // Blue proposes
+    app.execute_contract(
+        Addr::unchecked("blue"),
+        govmod.clone(),
+        &ExecuteMsg::Propose {
+            title: "A simple text proposal".to_string(),
+            description: "A simple text proposal".to_string(),
+            choices: mc_options.clone(),
+        },
+        &[],
+    )
+    .unwrap();
+
+    // Should fail as blue's balance is now 0
     let err = app
         .execute_contract(
             Addr::unchecked("blue"),
@@ -2001,7 +2035,10 @@ fn test_cant_propose_zero_power() {
         )
         .unwrap_err();
 
-    println!("{:?}", err)
+    assert!(matches!(
+        err.downcast().unwrap(),
+        ContractError::Unauthorized {}
+    ))
 }
 
 #[test]
