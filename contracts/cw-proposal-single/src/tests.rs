@@ -3738,7 +3738,7 @@ fn test_min_duration_same_as_proposal_duration() {
 #[test]
 fn test_timestamp_updated() {
     let mut app = App::default();
-    let govmod_id = app.store_code(single_proposal_contract());
+    let govmod_id = app.store_code(proposal_contract());
 
     let threshold = Threshold::AbsolutePercentage {
         percentage: PercentageThreshold::Majority {},

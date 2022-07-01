@@ -1,6 +1,8 @@
 use crate::query::ProposalResponse;
 use crate::state::PROPOSAL_COUNT;
-use cosmwasm_std::{Addr, BlockInfo, CosmosMsg, Decimal, Empty, StdResult, Storage, Uint128};
+use cosmwasm_std::{
+    Addr, BlockInfo, CosmosMsg, Decimal, Empty, StdResult, Storage, Timestamp, Uint128,
+};
 use cw_utils::Expiration;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
