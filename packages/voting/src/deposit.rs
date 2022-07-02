@@ -124,7 +124,7 @@ pub fn get_return_deposit_msg<T: Proposal>(proposal: &T) -> StdResult<Vec<Cosmos
                 contract_addr: info.token.to_string(),
                 funds: vec![],
                 msg: to_binary(&cw20::Cw20ExecuteMsg::Transfer {
-                    recipient: proposal.proposer().to_string(),
+                    recipient: proposal.proposer().into_string(),
                     amount: info.deposit,
                 })?,
             };
