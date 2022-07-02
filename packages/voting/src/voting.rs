@@ -236,7 +236,7 @@ pub fn get_voting_power(
     let response: voting::VotingPowerAtHeightResponse = deps.querier.query_wasm_smart(
         dao,
         &voting::Query::VotingPowerAtHeight {
-            address: address.to_string(),
+            address: address.into_string(),
             height,
         },
     )?;
