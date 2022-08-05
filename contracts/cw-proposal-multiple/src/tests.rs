@@ -3911,25 +3911,6 @@ fn test_close_failed_proposal() {
 
     assert_eq!(failed.proposal.status, Status::ExecutionFailed);
 
-    // Check we can close it after it failed
-    app.execute_contract(
-        Addr::unchecked(CREATOR_ADDR),
-        govmod_single.clone(),
-        &ExecuteMsg::Close { proposal_id: 1 },
-        &[],
-    )
-    .unwrap();
-
-    let closed_after_fail: ProposalResponse = app
-        .wrap()
-        .query_wasm_smart(
-            govmod_single.clone(),
-            &QueryMsg::Proposal { proposal_id: 1 },
-        )
-        .unwrap();
-
-    assert_eq!(closed_after_fail.proposal.status, Status::Closed);
-
     // With disabled feature
     // Disable feature first
     {
